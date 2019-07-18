@@ -38,6 +38,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import MultiStepLR
 import data_generator as dg
 from data_generator import DenoisingDataset
+from tensorboardX import SummaryWriter
 
 
 # Params
@@ -55,7 +56,7 @@ cuda = torch.cuda.is_available()
 n_epoch = args.epoch
 sigma = args.sigma
 
-save_dir = os.path.join('models', args.model+'_' + 'sigma' + str(sigma))
+save_dir = os.path.join('models', 'WDe-4'+args.model+'_' + 'sigma' + str(sigma))
 
 if not os.path.exists(save_dir):
     os.mkdir(save_dir)
@@ -143,14 +144,16 @@ if __name__ == '__main__':
          # device_ids = [0]
          # model = nn.DataParallel(model, device_ids=device_ids).cuda()
          # criterion = criterion.cuda()
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = MultiStepLR(optimizer, milestones=[30, 60, 90], gamma=0.2)  # learning rates
+    writer = SummaryWriter(comment='train')
     for epoch in range(initial_epoch, n_epoch):
 
         scheduler.step(epoch)  # step to the learning rate in this epcoh
         xs = dg.datagenerator(data_dir=args.train_data)
         xs = xs.astype('float32')/255.0
-        xs = torch.from_numpy(xs.transpose((0, 3, 1, 2)))  # tensor of the clean patches, NXCXHXW
+        xs = xs.transpose((0, 3, 1, 2))
+        xs = torch.from_numpy(xs)  # tensor of the clean patches, NXCXHXW
         DDataset = DenoisingDataset(xs, sigma)
         DLoader = DataLoader(dataset=DDataset, num_workers=4, drop_last=True, batch_size=batch_size, shuffle=True)
         epoch_loss = 0
@@ -172,7 +175,10 @@ if __name__ == '__main__':
         np.savetxt('train_result.txt', np.hstack((epoch+1, epoch_loss/n_count, elapsed_time)), fmt='%2.4f')
         # torch.save(model.state_dict(), os.path.join(save_dir, 'model_%03d.pth' % (epoch+1)))
         torch.save(model, os.path.join(save_dir, 'model_%03d.pth' % (epoch+1)))
-
+        writer.add_scalar('loss_curve', epoch_loss/n_count, epoch+1)
+    dummy_input = torch.randn(20,1,11,11)
+    writer.add_graph(model, dummy_input)
+    writer.close()
 
 
 
